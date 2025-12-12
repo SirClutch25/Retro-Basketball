@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Retro College Hoops - Save/Load</title>
+<style>
+body { background: #111; color: #fff; font-family: monospace; text-align: center; }
+canvas { background: #222; display: block; margin: 20px auto; border: 4px solid #fff; image-rendering: pixelated; }
+#info { margin-top: 10px; }
+button { margin: 5px; padding: 5px 10px; }
+</style>
+</head>
+<body>
+<h1>Retro College Hoops - Save/Load</h1>
+<p>Arrow keys to move, SPACE to shoot, P to pass.</p>
+<canvas id="game" width="320" height="480"></canvas>
+<div id="info"></div>
+<div id="bracket"></div>
+<div id="stats"></div>
+<script>
+const canvas=document.getElementById('game');
+const ctx=canvas.getContext('2d');
+
+class Player{
+  constructor(x,y,team,control=false){
+    this.x=x;this.y=y;this.w=20;this.h=10;this.team=team;this.hasBall=false;this.control=control;
+    this.points=0;this.shots=0;this.madeShots=0;this.assists=0;
+  }
+  draw(){ctx.fillStyle=this.team==='home'?'#0f0':'#f00';ctx.fillRect(this.x,this.y,this.w,this.h);if(this.hasBall){ctx.fillStyle='#ff0';ctx.fillRect(this.x+8,this.y-5,4,4);}}
+  move(dx,dy){this.x=Math.max(0,Math.min(300,this.x+dx));this.y=Math.max(0,Math.min(470,this.y+dy));}
+}
+
+let homeTeam=[new Player(80,420,'home',true),new Player(140,420,'home'),new Player(200,420,'home'),new Player(260,420,'home'),new Player(320,420,'home')];
+let awayTeam=[new Player(80,60,'away'),new Player(140,60,'away'),new Player(200,60,'away'),new Player(260,60,'away'),new Player(320,60,'away')];
+let ball={x:homeTeam[0].x+10,y:homeTeam[0].y,dx:0,dy:0,moving:false};
+homeTeam[0].hasBall=true;
+
+let keys={};document.addEventListener('keydown',e=>keys[e.key]=true);document.addEventListener('keyup',e=>keys[e.key]=false);
+
+function updatePlayers(){
+  let player=homeTeam.find(p=>p.control);
+  let speed=3;
+  if(keys['ArrowLeft'])player.move(-speed,0);
+  if(keys['ArrowRight'])player.move(speed,0);
+  if(keys['ArrowUp'])player.move(0,-speed);
+  if(keys['ArrowDown'])player.move(0,speed);
+
+  if(keys[' '] && player.hasBall && !ball.moving){ball.dx=0;ball.dy=-5;ball.x=player.x+8;ball.y=player.y;ball.moving=true;player.hasBall=false;player.shots++;}
+
+  if(keys['p'] && player.hasBall){let teammate=homeTeam[Math.floor(Math.random()*homeTeam.length)];if(teammate!==player){player.hasBall=false;teammate.hasBall=true;player.assists++;}}
+
+  awayTeam.forEach(opp=>{
+    let target=homeTeam.find(p=>p.hasBall);
+    let dx=target.x-opp.x, dy=target.y-opp.y;
+    let moveSpeed=1.5;
+    if(Math.abs(dx)>1)opp.x+=dx>0?moveSpeed:-moveSpeed;
+    if(Math.abs(dy)>1)opp.y+=dy>0?moveSpeed:-moveSpeed;
+    if(!ball.moving && Math.abs(dx)<15 && Math.abs(dy)<15){ball.dx=0;ball.dy=5;ball.moving=true;opp.hasBall=false;}
+  });
+
+  if(ball.moving){
+    ball.x+=ball.dx;ball.y+=ball.dy;
+    if(ball.y<60 || ball.y>470){if(ball.dy<0)player.madeShots++;player.points+=2;ball.moving=false;homeTeam.forEach(p=>p.hasBall=false);homeTeam[0].hasBall=true;}
+  }
+}
+
+function drawPlayers(){[...homeTeam,...awayTeam].forEach(p=>p.draw());if(ball.moving){ctx.fillStyle='#ff0';ctx.fillRect(ball.x,ball.y,4,4);}}
+
+let season={week:1,team:{name:'College A',rating:60,recruits:[],record:{wins:0,losses:0}},opponents:[],playoffs:false,bracket:[]};
+function generateOpponents(){season.opponents=Array.from({length:10},(_,i)=>({name:'Team '+(i+1),rating:40+Math.floor(Math.random()*40)}));}
+generateOpponents();
+
+function recruitPlayer(){const recruit={name:'Recruit '+(season.team.recruits.length+1),talent:Math.floor(Math.random()*40)+60};season.team.recruits.push(recruit);alert('Signed: '+recruit.name+' ('+recruit.talent+')');}
+
+function playGame(){let opponent=season.opponents[season.week-1];let teamScore=season.team.rating+Math.floor(Math.random()*20);let oppScore=opponent.rating+Math.floor(Math.random()*20);
+if(teamScore>=oppScore){season.team.record.wins++;season.bracket.push({opponent:opponent.name,result:'W',score:teamScore+'-'+oppScore});}
+else{season.team.record.losses++;season.bracket.push({opponent:opponent.name,result:'L',score:teamScore+'-'+oppScore});}
+displayBracket();displayStats();}
+
+function nextWeek(){playGame();season.week++;if(season.week>10){season.playoffs=true;alert(`Season complete! Record: ${season.team.record.wins}-${season.team.record.losses}. Starting playoffs!`);season.week=1;season.team.record={wins:0,losses:0};season.team.recruits=[];generateOpponents();}}
+
+function displayBracket(){const bracketDiv=document.getElementById('bracket');let html='<h3>Season Bracket</h3><ol>';season.bracket.forEach(match=>{html+=`<li>${match.opponent}: ${match.result} (${match.score})</li>`});html+='</ol>';bracketDiv.innerHTML=html;}
+function displayStats(){const statsDiv=document.getElementById('stats');let html='<h3>Player Stats</h3><ul>';homeTeam.forEach(p=>{html+=`<li>${p.control?'You':'Teammate'} - PTS: ${p.points} SHOTS: ${p.shots} MADE: ${p.madeShots} AST: ${p.assists}</li>`});html+='</ul>';statsDiv.innerHTML=html;}
+
+// --- Save/Load ---
+function saveGame(){localStorage.setItem('retroHoopsSave',JSON.stringify({season,homeTeam,awayTeam,ball}));alert('Game Saved!');}
+function loadGame(){let data=localStorage.getItem('retroHoopsSave');if(data){let save=JSON.parse(data);season=save.season;homeTeam=save.homeTeam.map(p=>Object.assign(new Player(),p));awayTeam=save.awayTeam.map(p=>Object.assign(new Player(),p));ball=save.ball;alert('Game Loaded!');displayBracket();displayStats();}}
+
+const infoDiv=document.getElementById('info');
+infoDiv.innerHTML=`Week: <span id='week'>1</span><br>`+
+`<button onclick='recruitPlayer()'>Recruit Player</button>`+
+`<button onclick='nextWeek()'>Next Week</button>`+
+`<button onclick='saveGame()'>Save Game</button>`+
+`<button onclick='loadGame()'>Load Game</button>`;
+function updateSeasonUI(){document.getElementById('week').textContent=season.week;}
+
+function gameLoop(){ctx.fillStyle='#000';ctx.fillRect(0,0,320,480);updatePlayers();drawPlayers();updateSeasonUI();displayStats();requestAnimationFrame(gameLoop);}
+gameLoop();
+</script>
+</body>
+</html>
