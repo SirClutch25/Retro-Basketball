@@ -1,103 +1,252 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Retro College Hoops - Save/Load</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Retro College Hoops — Retro Bowl Style</title>
 <style>
-body { background: #111; color: #fff; font-family: monospace; text-align: center; }
-canvas { background: #222; display: block; margin: 20px auto; border: 4px solid #fff; image-rendering: pixelated; }
-#info { margin-top: 10px; }
-button { margin: 5px; padding: 5px 10px; }
+  body{background:#0b0b0b;color:#fff;font-family:monospace;text-align:center}
+  canvas{background:#222;display:block;margin:12px auto;border:4px solid #fff;image-rendering:pixelated}
+  #ui{max-width:900px;margin:0 auto}
+  #controls button{margin:6px;padding:6px 10px}
+  #plays{display:flex;gap:6px;justify-content:center;margin:8px}
+  #info,#bracket,#stats{margin:8px}
+  #playOverlay{position:fixed;left:50%;top:60%;transform:translate(-50%,-50%);background:#111;border:2px solid #fff;padding:10px;display:none}
 </style>
 </head>
 <body>
-<h1>Retro College Hoops - Save/Load</h1>
-<p>Arrow keys to move, SPACE to shoot, P to pass.</p>
-<canvas id="game" width="320" height="480"></canvas>
-<div id="info"></div>
-<div id="bracket"></div>
-<div id="stats"></div>
+  <div id="ui">
+    <h1>Retro College Hoops — Retro Bowl Style</h1>
+    <p>Season management + Retro-Bowl-like playcalling and on-court execution.</p>
+    <canvas id="game" width="420" height="560"></canvas>
+    <div id="info"></div>
+    <div id="controls">
+      <button id="enterPlayMode">Enter Play Mode</button>
+      <button id="subButton">Substitute</button>
+      <button id="saveBtn">Save</button>
+      <button id="loadBtn">Load</button>
+    </div>
+    <div id="plays"></div>
+    <div id="bracket"></div>
+    <div id="stats"></div>
+  </div>
+
+  <div id="playOverlay">
+    <div><strong>Select a Play</strong></div>
+    <div id="playOptions"></div>
+    <div style="margin-top:8px"><button id="callPlay">Call Play</button> <button id="cancelPlay">Cancel</button></div>
+  </div>
+
 <script>
+// ---- Basic utilities ----
 const canvas=document.getElementById('game');
 const ctx=canvas.getContext('2d');
+function rand(min,max){return Math.floor(Math.random()*(max-min+1))+min}
 
+// ---- Player class ----
 class Player{
-  constructor(x,y,team,control=false){
-    this.x=x;this.y=y;this.w=20;this.h=10;this.team=team;this.hasBall=false;this.control=control;
-    this.points=0;this.shots=0;this.madeShots=0;this.assists=0;
+  constructor(id,x,y,team,control=false){
+    this.id=id;this.x=x;this.y=y;this.w=18;this.h=10;this.team=team;this.control=control;this.hasBall=false;
+    this.fatigue=0;this.points=0;this.shots=0;this.made=0;this.assists=0;this.offenseIQ=rand(40,80);this.defenseIQ=rand(40,80);
   }
-  draw(){ctx.fillStyle=this.team==='home'?'#0f0':'#f00';ctx.fillRect(this.x,this.y,this.w,this.h);if(this.hasBall){ctx.fillStyle='#ff0';ctx.fillRect(this.x+8,this.y-5,4,4);}}
-  move(dx,dy){this.x=Math.max(0,Math.min(300,this.x+dx));this.y=Math.max(0,Math.min(470,this.y+dy));}
+  draw(){ctx.fillStyle=this.team==='home'?'#6f6':'#f66';ctx.fillRect(this.x,this.y,this.w,this.h);if(this.hasBall){ctx.fillStyle='#ff0';ctx.fillRect(this.x+6,this.y-6,4,4);} }
 }
 
-let homeTeam=[new Player(80,420,'home',true),new Player(140,420,'home'),new Player(200,420,'home'),new Player(260,420,'home'),new Player(320,420,'home')];
-let awayTeam=[new Player(80,60,'away'),new Player(140,60,'away'),new Player(200,60,'away'),new Player(260,60,'away'),new Player(320,60,'away')];
-let ball={x:homeTeam[0].x+10,y:homeTeam[0].y,dx:0,dy:0,moving:false};
-homeTeam[0].hasBall=true;
-
-let keys={};document.addEventListener('keydown',e=>keys[e.key]=true);document.addEventListener('keyup',e=>keys[e.key]=false);
-
-function updatePlayers(){
-  let player=homeTeam.find(p=>p.control);
-  let speed=3;
-  if(keys['ArrowLeft'])player.move(-speed,0);
-  if(keys['ArrowRight'])player.move(speed,0);
-  if(keys['ArrowUp'])player.move(0,-speed);
-  if(keys['ArrowDown'])player.move(0,speed);
-
-  if(keys[' '] && player.hasBall && !ball.moving){ball.dx=0;ball.dy=-5;ball.x=player.x+8;ball.y=player.y;ball.moving=true;player.hasBall=false;player.shots++;}
-
-  if(keys['p'] && player.hasBall){let teammate=homeTeam[Math.floor(Math.random()*homeTeam.length)];if(teammate!==player){player.hasBall=false;teammate.hasBall=true;player.assists++;}}
-
-  awayTeam.forEach(opp=>{
-    let target=homeTeam.find(p=>p.hasBall);
-    let dx=target.x-opp.x, dy=target.y-opp.y;
-    let moveSpeed=1.5;
-    if(Math.abs(dx)>1)opp.x+=dx>0?moveSpeed:-moveSpeed;
-    if(Math.abs(dy)>1)opp.y+=dy>0?moveSpeed:-moveSpeed;
-    if(!ball.moving && Math.abs(dx)<15 && Math.abs(dy)<15){ball.dx=0;ball.dy=5;ball.moving=true;opp.hasBall=false;}
-  });
-
-  if(ball.moving){
-    ball.x+=ball.dx;ball.y+=ball.dy;
-    if(ball.y<60 || ball.y>470){if(ball.dy<0)player.madeShots++;player.points+=2;ball.moving=false;homeTeam.forEach(p=>p.hasBall=false);homeTeam[0].hasBall=true;}
-  }
+// ---- Court & teams ----
+const court={w:420,h:560,hoopY:80,backboardY:70,hoopX:210};
+let homeTeam=[],awayTeam=[];
+function createTeams(){homeTeam=[new Player('H1',110,420,'home',true),new Player('H2',170,420,'home'),new Player('H3',230,420,'home'),new Player('H4',290,420,'home'),new Player('H5',350,420,'home')];
+  awayTeam=[new Player('A1',110,120,'away'),new Player('A2',170,120,'away'),new Player('A3',230,120,'away'),new Player('A4',290,120,'away'),new Player('A5',350,120,'away')];
+  homeTeam[0].hasBall=true;
 }
+createTeams();
+let ball={x:homeTeam[0].x+8,y:homeTeam[0].y,dx:0,dy:0,moving:false,owner:null};
 
-function drawPlayers(){[...homeTeam,...awayTeam].forEach(p=>p.draw());if(ball.moving){ctx.fillStyle='#ff0';ctx.fillRect(ball.x,ball.y,4,4);}}
-
-let season={week:1,team:{name:'College A',rating:60,recruits:[],record:{wins:0,losses:0}},opponents:[],playoffs:false,bracket:[]};
-function generateOpponents(){season.opponents=Array.from({length:10},(_,i)=>({name:'Team '+(i+1),rating:40+Math.floor(Math.random()*40)}));}
+// ---- Season data ----
+let season={week:1,team:{name:'College A',rating:65,recruits:[],roster:[],record:{wins:0,losses:0}},opponents:[],bracket:[]};
+function generateOpponents(){season.opponents=Array.from({length:10},(_,i)=>({name:'Team '+(i+1),rating:40+rand(0,40)}));}
 generateOpponents();
 
-function recruitPlayer(){const recruit={name:'Recruit '+(season.team.recruits.length+1),talent:Math.floor(Math.random()*40)+60};season.team.recruits.push(recruit);alert('Signed: '+recruit.name+' ('+recruit.talent+')');}
+// ---- Playbook (Retro-Bowl-like) ----
+const playbook=[
+  {id:'iso',name:'Isolation',desc:'Ball-handler goes 1-on-1, higher chance of jumper.'},
+  {id:'pickroll',name:'Pick & Roll',desc:'Screen sets, roll to basket for layup.'},
+  {id:'post',name:'Post Up',desc:'Feed big in post for high-percentage shots.'},
+  {id:'quick',name:'Quick Shot',desc:'Fast attempt with lower % but catches defense off-guard.'},
+  {id:'motion',name:'Motion Offense',desc:'Team moves to create open shot; balanced outcome.'}
+];
 
-function playGame(){let opponent=season.opponents[season.week-1];let teamScore=season.team.rating+Math.floor(Math.random()*20);let oppScore=opponent.rating+Math.floor(Math.random()*20);
-if(teamScore>=oppScore){season.team.record.wins++;season.bracket.push({opponent:opponent.name,result:'W',score:teamScore+'-'+oppScore});}
-else{season.team.record.losses++;season.bracket.push({opponent:opponent.name,result:'L',score:teamScore+'-'+oppScore});}
-displayBracket();displayStats();}
+// ---- UI Elements ----
+const playsDiv=document.getElementById('plays');
+const playOverlay=document.getElementById('playOverlay');
+const playOptions=document.getElementById('playOptions');
+let selectedPlay=null;
 
-function nextWeek(){playGame();season.week++;if(season.week>10){season.playoffs=true;alert(`Season complete! Record: ${season.team.record.wins}-${season.team.record.losses}. Starting playoffs!`);season.week=1;season.team.record={wins:0,losses:0};season.team.recruits=[];generateOpponents();}}
+function showPlayOverlay(){playOptions.innerHTML='';playbook.forEach(p=>{const btn=document.createElement('button');btn.textContent=p.name;btn.onclick=()=>{selectedPlay=p;Array.from(playOptions.querySelectorAll('button')).forEach(b=>b.style.outline='');btn.style.outline='2px solid #fff'}});playOverlay.style.display='block'}
+function hidePlayOverlay(){playOverlay.style.display='none';selectedPlay=null}
 
-function displayBracket(){const bracketDiv=document.getElementById('bracket');let html='<h3>Season Bracket</h3><ol>';season.bracket.forEach(match=>{html+=`<li>${match.opponent}: ${match.result} (${match.score})</li>`});html+='</ol>';bracketDiv.innerHTML=html;}
-function displayStats(){const statsDiv=document.getElementById('stats');let html='<h3>Player Stats</h3><ul>';homeTeam.forEach(p=>{html+=`<li>${p.control?'You':'Teammate'} - PTS: ${p.points} SHOTS: ${p.shots} MADE: ${p.madeShots} AST: ${p.assists}</li>`});html+='</ul>';statsDiv.innerHTML=html;}
+// Populate play area with quick info
+function refreshPlaysUI(){playsDiv.innerHTML='Play Mode Controls: Call a play (game-pauses while selecting).';}
+refreshPlaysUI();
 
-// --- Save/Load ---
-function saveGame(){localStorage.setItem('retroHoopsSave',JSON.stringify({season,homeTeam,awayTeam,ball}));alert('Game Saved!');}
-function loadGame(){let data=localStorage.getItem('retroHoopsSave');if(data){let save=JSON.parse(data);season=save.season;homeTeam=save.homeTeam.map(p=>Object.assign(new Player(),p));awayTeam=save.awayTeam.map(p=>Object.assign(new Player(),p));ball=save.ball;alert('Game Loaded!');displayBracket();displayStats();}}
+// ---- Play execution logic ----
+let inPlayMode=false; // when true, user calls plays each possession
+let possession='home'; // 'home' or 'away'
+let gameClock=600; // 600 seconds -> 10 minutes simplified
+let homeScore=0,awayScore=0;
 
-const infoDiv=document.getElementById('info');
-infoDiv.innerHTML=`Week: <span id='week'>1</span><br>`+
-`<button onclick='recruitPlayer()'>Recruit Player</button>`+
-`<button onclick='nextWeek()'>Next Week</button>`+
-`<button onclick='saveGame()'>Save Game</button>`+
-`<button onclick='loadGame()'>Load Game</button>`;
-function updateSeasonUI(){document.getElementById('week').textContent=season.week;}
+function evaluatePlay(play){
+  // determine outcome probabilities based on play, team skill, random
+  const teamRating=season.team.rating;
+  let base=teamRating + rand(-10,10);
+  let successChance=0.5; // base
+  switch(play.id){
+    case 'iso': successChance=0.45 + (base-60)/200; break;
+    case 'pickroll': successChance=0.55 + (base-60)/200; break;
+    case 'post': successChance=0.6 + (base-60)/200; break;
+    case 'quick': successChance=0.35 + (base-60)/200; break;
+    case 'motion': successChance=0.5 + (base-60)/200; break;
+  }
+  // defense adjustment
+  const defAdj = season.opponents[Math.max(0,season.week-1)] ? (season.opponents[Math.max(0,season.week-1)].rating - 60)/200 : 0;
+  successChance -= defAdj;
+  successChance = Math.max(0.15, Math.min(0.9, successChance));
+  const made = Math.random() < successChance;
+  // decide points: layup(2) or 3pt possibility for iso/quick/motion
+  let pts = 2;
+  if(play.id==='iso' || play.id==='quick' || play.id==='motion'){
+    if(Math.random() < 0.18) pts = 3; // some 3pt chance
+  }
+  return {made,pts,successChance};
+}
 
-function gameLoop(){ctx.fillStyle='#000';ctx.fillRect(0,0,320,480);updatePlayers();drawPlayers();updateSeasonUI();displayStats();requestAnimationFrame(gameLoop);}
-gameLoop();
+function callSelectedPlay(){ if(!selectedPlay) return alert('Select a play first'); playOverlay.style.display='none';
+  // simulate on-court: pause normal input, run play animation + apply result
+  runPlay(selectedPlay);
+}
+
+function runPlay(play){
+  // simple animation: move players based on play type, then resolve
+  // freeze away movement
+  disableControl=true;
+  let anim=0; const animLen=40;
+  const animInterval=setInterval(()=>{
+    anim++;
+    // basic movement patterns
+    if(play.id==='pickroll'){
+      // screen: one teammate moves to set screen near ball then roll
+      homeTeam.forEach((p,i)=>{ if(i===1) p.x-=1; if(i===2 && anim>20) p.y-=2; });
+    } else if(play.id==='iso'){
+      // ball handler isolates: others spread
+      homeTeam.forEach((p,i)=>{ if(!p.hasBall) p.y+= (i%2?1:-1); });
+    } else if(play.id==='motion'){
+      homeTeam.forEach((p,i)=>{ p.x += (i%2?1:-1); });
+    }
+    if(anim>animLen){ clearInterval(animInterval); resolvePlay(play); disableControl=false; }
+  },16);
+}
+
+function resolvePlay(play){ const res=evaluatePlay(play);
+  if(res.made){ homeScore += res.pts; // assign points to ball-handler
+    const scorer = homeTeam.find(p=>!p.control && !p.hasBall) || homeTeam[0];
+    scorer.points += res.pts; scorer.shots++; scorer.made++;
+    season.bracket.push({week:season.week,play:play.name,result:'Made',pts:res.pts});
+    showMessage(`Play result: ${play.name} — MADE ${res.pts} pts`);
+  } else {
+    season.bracket.push({week:season.week,play:play.name,result:'Miss',pts:0});
+    showMessage(`Play result: ${play.name} — Miss`);
+  }
+  // switch possession to opponent (simplified)
+  possession = 'away';
+  // fast simulate opponent possession
+  setTimeout(()=>{opponentPossession();},600);
+  updateUI();
+}
+
+function opponentPossession(){
+  // simple AI: pick random play and resolve with opponent rating
+  const oppPlay = playbook[rand(0,playbook.length-1)];
+  // lower chance to get 3s
+  const oppRating = season.opponents[Math.max(0,season.week-1)]?.rating || 55;
+  const base=oppRating+rand(-10,10);
+  let oppSuccess=0.45 + (base-60)/200 + (rand(-10,10)/100);
+  oppSuccess = Math.max(0.1,Math.min(0.85,oppSuccess));
+  const made = Math.random()<oppSuccess;
+  const pts = (Math.random()<0.18 ? 3 : 2);
+  if(made){ awayScore+=pts; }
+  possession='home';
+  updateUI();
+}
+
+function showMessage(msg){ const info=document.getElementById('info'); info.innerHTML = `<div>${msg}</div>` + info.innerHTML; }
+
+// ---- Game flow & UI ----
+let disableControl=false;
+function updateUI(){ document.getElementById('stats').innerHTML = `<strong>Score</strong> Home ${homeScore} - ${awayScore} Away<br>Week ${season.week}`; displayBracket(); displayRoster(); }
+
+function displayBracket(){ const b=document.getElementById('bracket'); let html='<h3>Play Log</h3><ol>'; season.bracket.slice(-10).forEach(x=>{ html+=`<li>W${x.week||''} ${x.play}: ${x.result} ${x.pts? '('+x.pts+')':''}</li>`}); html+='</ol>'; b.innerHTML=html; }
+
+function displayRoster(){ let html='<h3>Roster</h3><div style="display:flex;justify-content:center;gap:12px">'; homeTeam.forEach(p=>{ html+=`<div>${p.id}<br>PTS:${p.points}</div>` }); html+='</div>'; document.getElementById('stats').innerHTML += html; }
+
+// ---- Controls ----
+document.getElementById('enterPlayMode').onclick=()=>{ inPlayMode=true; showPlayOverlay(); };
+document.getElementById('cancelPlay').onclick=()=>{ hidePlayOverlay() };
+document.getElementById('callPlay').onclick=()=>{ callSelectedPlay(); selectedPlay=null; }
+
+document.getElementById('saveBtn').onclick=saveGame;
+document.getElementById('loadBtn').onclick=loadGame;
+
+// substitute button opens prompt to swap players
+document.getElementById('subButton').onclick=()=>{
+  const subFrom = prompt('Substitute: enter starting player id to replace (e.g. H1):');
+  const subTo = prompt('Enter new player id (e.g. H6)');
+  if(!subFrom||!subTo) return;
+  // naive: replace coordinates and stats
+  const idx = homeTeam.findIndex(p=>p.id===subFrom);
+  if(idx===-1) return alert('Player not found');
+  homeTeam[idx].id = subTo; alert('Substitution made'); updateUI();
+}
+
+// ---- Save/Load ----
+function serializePlayers(arr){return arr.map(p=>({id:p.id,x:p.x,y:p.y,team:p.team,hasBall:p.hasBall,points:p.points,shots:p.shots,made:p.made,assists:p.assists,offenseIQ:p.offenseIQ,defenseIQ:p.defenseIQ}));}
+function deserializePlayers(data){return data.map(p=>{const pl=new Player(p.id,p.x,p.y,p.team);pl.hasBall=p.hasBall;pl.points=p.points;pl.shots=p.shots;pl.made=p.made;pl.assists=p.assists;pl.offenseIQ=p.offenseIQ;pl.defenseIQ=p.defenseIQ;return pl;});}
+
+function saveGame(){const state={season,homeTeam:serializePlayers(homeTeam),awayTeam:serializePlayers(awayTeam),ball,homeScore,awayScore};localStorage.setItem('retroHoopsSave',JSON.stringify(state));alert('Saved');}
+function loadGame(){const data=localStorage.getItem('retroHoopsSave');if(!data) return alert('No save found');const s=JSON.parse(data);season=s.season;homeTeam=deserializePlayers(s.homeTeam);awayTeam=deserializePlayers(s.awayTeam);ball=s.ball;homeScore=s.homeScore;awayScore=s.awayScore;alert('Loaded');updateUI();}
+
+// ---- Input for on-court movement when not in playcall ----
+let keys={};document.addEventListener('keydown',e=>keys[e.key]=true);document.addEventListener('keyup',e=>keys[e.key]=false);
+function handleMovement(){ if(disableControl) return; const me = homeTeam.find(p=>p.control); const speed= (keys['Shift']?1.5:3);
+  if(keys['ArrowLeft']) me.x -= speed; if(keys['ArrowRight']) me.x += speed; if(keys['ArrowUp']) me.y -= speed; if(keys['ArrowDown']) me.y += speed;
+  // keep on court
+  me.x = Math.max(10, Math.min(court.w-30, me.x)); me.y = Math.max(90, Math.min(court.h-20, me.y));
+  // shooting via space — triggers a quick shot equivalent
+  if(keys[' '] && !ball.moving && me.hasBall){ // quick shot
+    const shot = evaluatePlay({id:'quick'});
+    me.shots++; if(shot.made){ me.points+=shot.pts; me.made++; homeScore+=shot.pts; }
+    me.hasBall=false; ball.moving=false; possession='away'; setTimeout(opponentPossession,500);
+  }
+}
+
+// ---- Game draw loop ----
+function drawCourt(){ ctx.fillStyle='#004'; ctx.fillRect(0,0,court.w,court.h); // simple court
+  // rim
+  ctx.fillStyle='#aaa'; ctx.fillRect(court.hoopX-20,court.hoopY,40,6);
+}
+
+function draw(){ ctx.clearRect(0,0,canvas.width,canvas.height); drawCourt(); [...homeTeam,...awayTeam].forEach(p=>p.draw()); if(ball.moving){ctx.fillStyle='#ff0';ctx.fillRect(ball.x,ball.y,6,6);} updateUI(); }
+
+// ---- main loop ----
+function loop(){ handleMovement(); draw(); requestAnimationFrame(loop); }
+loop();
+
+// ---- initialize UI ----
+function initPlayButtons(){ const optionsDiv=document.getElementById('playOptions'); optionsDiv.innerHTML=''; playbook.forEach(p=>{ const b=document.createElement('button'); b.textContent = p.name; b.onclick=()=>{ selectedPlay=p; Array.from(optionsDiv.querySelectorAll('button')).forEach(x=>x.style.background=''); b.style.background='#333'; }; optionsDiv.appendChild(b); }); }
+initPlayButtons(); updateUI();
+
+// show utility message
+showMessage('Welcome — press Enter Play Mode to call plays like Retro Bowl. Save often!');
+
 </script>
 </body>
 </html>
-
