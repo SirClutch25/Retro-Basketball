@@ -225,11 +225,12 @@ function drawCourt(){ // wood background
 }
 
 // == Draw Loop ==
-function draw(){ ctx.clearRect(0,0,canvas.width,canvas.height); drawCourt(); // update frames
-  [...homeTeam,...awayTeam].forEach(p=>{ p.step(); p.draw(); });
-  // ball draw if free
-  if(ball.moving){ ctx.fillStyle='#ffb400'; ctx.beginPath(); ctx.arc(ball.x,ball.y,6,0,Math.PI*2); ctx.fill(); }
-  updateUI(); }
+function draw(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  drawCourt();
+  [...homeTeam, ...awayTeam].forEach(p => p.draw());
+  if(ball.moving){ ctx.fillStyle='#ff0'; ctx.fillRect(ball.x, ball.y, 6, 6); }
+}
 
 // == Main Loop ==
 function loop(){ handleMovement(); draw(); requestAnimationFrame(loop); }
@@ -242,3 +243,4 @@ initPlayButtons(); updateUI(); showMessage('NBA Jam–style sprites enabled. Ani
 </script>
 </body>
 </html>
+
