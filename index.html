@@ -229,11 +229,47 @@ function handleMovement(){ if(disableControl) return; const me = homeTeam.find(p
 }
 
 // ---- Game draw loop ----
-function drawCourt(){ ctx.fillStyle='#004'; ctx.fillRect(0,0,court.w,court.h); // simple court
-  // rim
-  ctx.fillStyle='#aaa'; ctx.fillRect(court.hoopX-20,court.hoopY,40,6);
-}
+function drawCourt(){
+  // Full retro-style basketball court
+  ctx.fillStyle = '#2b5';
+  ctx.fillRect(0,0,court.w,court.h);
 
+  // main court lines
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 3;
+
+  // outer boundary
+  ctx.strokeRect(10, 90, court.w-20, court.h-100);
+
+  // center line
+  ctx.beginPath();
+  ctx.moveTo(10, court.h/2);
+  ctx.lineTo(court.w-10, court.h/2);
+  ctx.stroke();
+
+  // center circle
+  ctx.beginPath();
+  ctx.arc(court.w/2, court.h/2, 40, 0, Math.PI*2);
+  ctx.stroke();
+
+  // home key
+  ctx.strokeRect(court.w/2 - 60, court.h - 200, 120, 110);
+  ctx.beginPath();
+  ctx.arc(court.w/2, court.h - 200, 60, 0, Math.PI);
+  ctx.stroke();
+
+  // away key
+  ctx.strokeRect(court.w/2 - 60, 90, 120, 110);
+  ctx.beginPath();
+  ctx.arc(court.w/2, 200, 60, Math.PI, Math.PI*2);
+  ctx.stroke();
+
+  // hoop and backboard
+  ctx.fillStyle = '#f00';
+  ctx.fillRect(court.hoopX-20, court.hoopY, 40, 6); // rim
+  ctx.fillStyle = '#ccc';
+  ctx.fillRect(court.hoopX-30, court.backboardY, 60, 4); // backboard
+}
 function draw(){ ctx.clearRect(0,0,canvas.width,canvas.height); drawCourt(); [...homeTeam,...awayTeam].forEach(p=>p.draw()); if(ball.moving){ctx.fillStyle='#ff0';ctx.fillRect(ball.x,ball.y,6,6);} updateUI(); }
 
 // ---- main loop ----
@@ -250,7 +286,3 @@ showMessage('Welcome — press Enter Play Mode to call plays like Retro Bowl. Sa
 </script>
 </body>
 </html>
-
-
-
-
