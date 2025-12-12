@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Retro College Hoops — Retro Bowl Style</title>
+<title>Retro College Hoops — NBA Jam Style</title>
 <style>
-  body{background:#0b0b0b;color:#fff;font-family:monospace;text-align:center}
-  canvas{background:#222;display:block;margin:12px auto;border:4px solid #fff;image-rendering:pixelated}
-  #ui{max-width:900px;margin:0 auto}
-  #controls button{margin:6px;padding:6px 10px}
+  body{background:#07120a;color:#fff;font-family:monospace;text-align:center}
+  canvas{background:#083;display:block;margin:12px auto;border:6px solid #000;image-rendering:pixelated}
+  #ui{max-width:980px;margin:0 auto}
+  #controls button{margin:6px;padding:8px 12px;background:#111;color:#fff;border:1px solid #666}
   #plays{display:flex;gap:6px;justify-content:center;margin:8px}
   #info,#bracket,#stats{margin:8px}
   #playOverlay{position:fixed;left:50%;top:60%;transform:translate(-50%,-50%);background:#111;border:2px solid #fff;padding:10px;display:none}
@@ -16,8 +16,8 @@
 </head>
 <body>
   <div id="ui">
-    <h1>Retro College Hoops — Retro Bowl Style</h1>
-    <p>Season management + Retro-Bowl-like playcalling and on-court execution.</p>
+    <h1>Retro College Hoops — NBA Jam Style</h1>
+    <p>Playcalling + full 5-on-5 with pixel-sprite animations. Arrow keys to move, SPACE shoot, P pass, Enter Play Mode to call set plays.</p>
     <canvas id="game" width="420" height="560"></canvas>
     <div id="info"></div>
     <div id="controls">
@@ -38,314 +38,206 @@
   </div>
 
 <script>
-// ---- Basic utilities ----
+// == Utilities ==
 const canvas=document.getElementById('game');
 const ctx=canvas.getContext('2d');
 function rand(min,max){return Math.floor(Math.random()*(max-min+1))+min}
 
-// ---- Player class ----
+// == Sprite system (procedural NBA-Jam-like sprites) ==
+// We'll draw animated pixel characters using simple vector shapes with frame offsets to simulate animation.
+function drawSprite(x,y,team,action,frame){
+  // action: 'idle','run','dribble','shoot','dunk'
+  // frame: integer
+  ctx.save();
+  ctx.translate(x,y);
+  // scale for pixelated chunky look
+  ctx.imageSmoothingEnabled = false;
+
+  // body color by team
+  const bodyColor = team==='home' ? '#FFD37F' : '#7FB3FF';
+  const shortsColor = team==='home' ? '#663300' : '#003366';
+  const skin = '#F2C99D';
+
+  // animation offsets
+  let armAngle = 0; let legOffset = 0; let torsoLean = 0; let headTilt=0;
+  if(action==='run'){
+    armAngle = Math.sin(frame/4)*0.6;
+    legOffset = Math.sin(frame/3)*4;
+    torsoLean = Math.sin(frame/6)*2;
+  } else if(action==='dribble'){
+    armAngle = Math.sin(frame/6)*0.4;
+    legOffset = Math.sin(frame/8)*2;
+  } else if(action==='shoot'){
+    armAngle = -1.2 - (frame/6);
+    headTilt = -0.2;
+  } else if(action==='dunk'){
+    armAngle = -1.8 - (frame/4);
+    legOffset = -6;
+    torsoLean = -6;
+  } else { // idle
+    armAngle = Math.sin(frame/12)*0.2;
+    legOffset = 0;
+  }
+
+  // draw legs
+  ctx.fillStyle = shortsColor;
+  ctx.fillRect(-6,6+legOffset,5,12); // left
+  ctx.fillRect(1,6-legOffset,5,12); // right
+
+  // shoes
+  ctx.fillStyle='#111';
+  ctx.fillRect(-7,18+legOffset,7,4);
+  ctx.fillRect(1,18-legOffset,7,4);
+
+  // torso
+  ctx.fillStyle = bodyColor;
+  ctx.fillRect(-10+torsoLean/3, -8, 20, 20);
+
+  // jersey number (small)
+  ctx.fillStyle = '#000';
+  ctx.font = 'bold 8px monospace';
+  ctx.textAlign='center';
+  ctx.fillText('8',0,2);
+
+  // head
+  ctx.beginPath(); ctx.fillStyle=skin; ctx.arc(0,-14+headTilt*4,6,0,Math.PI*2); ctx.fill();
+  // eyes (small)
+  ctx.fillStyle='#000'; ctx.fillRect(-2,-16,2,2); ctx.fillRect(2,-16,2,2);
+
+  // arms (simple lines) - left
+  ctx.strokeStyle=skin; ctx.lineWidth=4; ctx.beginPath();
+  ctx.moveTo(-10,-4);
+  ctx.lineTo(-10 - Math.cos(armAngle)*14, -4 - Math.sin(armAngle)*8);
+  ctx.stroke();
+  // right
+  ctx.beginPath(); ctx.moveTo(10,-4);
+  ctx.lineTo(10 + Math.cos(armAngle)*14, -4 - Math.sin(armAngle)*8);
+  ctx.stroke();
+
+  // ball if dribbling or hasBall (draw near right hand)
+  if(action==='dribble' || action==='dribble_hold' || action==='shoot' || action==='dunk'){
+    ctx.fillStyle='#ffb400';
+    ctx.beginPath(); ctx.arc(12, -4 - Math.sin(frame/3)*6, 5, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle='#000'; ctx.lineWidth=1; ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+// == Player class ==
 class Player{
   constructor(id,x,y,team,control=false){
-    this.id=id;this.x=x;this.y=y;this.w=18;this.h=10;this.team=team;this.control=control;this.hasBall=false;
-    this.fatigue=0;this.points=0;this.shots=0;this.made=0;this.assists=0;this.offenseIQ=rand(40,80);this.defenseIQ=rand(40,80);
+    this.id=id;this.x=x;this.y=y;this.team=team;this.control=control;this.hasBall=false;
+    this.action='idle';this.frame=0;this.points=0;this.shots=0;this.made=0;this.assists=0;
   }
-  draw() {
-        // NBA Jam–style retro sprite
-        const sprite = new Image();
-        sprite.src = this.color === "#0f0" ? "player_green.png" : "player_red.png";
-        ctx.drawImage(sprite, this.x - 16, this.y - 16, 32, 32);
-    } }
+  step(){ this.frame++; if(this.frame>10000) this.frame=0; }
+  draw(){ drawSprite(this.x,this.y,this.team,this.action,this.frame); }
 }
 
-// ---- Court & teams ----
-const court={w:420,h:560,hoopY:80,backboardY:70,hoopX:210};
-let homeTeam=[],awayTeam=[];
-function createTeams(){homeTeam=[new Player('H1',110,420,'home',true),new Player('H2',170,420,'home'),new Player('H3',230,420,'home'),new Player('H4',290,420,'home'),new Player('H5',350,420,'home')];
-  awayTeam=[new Player('A1',110,120,'away'),new Player('A2',170,120,'away'),new Player('A3',230,120,'away'),new Player('A4',290,120,'away'),new Player('A5',350,120,'away')];
-  homeTeam[0].hasBall=true;
+// == Teams ==
+const court={w:420,h:560,hoopY:72,backboardY:64,hoopX:210};
+let homeTeam=[], awayTeam=[];
+function createTeams(){ homeTeam = [new Player('H1',110,420,'home',true), new Player('H2',170,430,'home'), new Player('H3',230,430,'home'), new Player('H4',290,430,'home'), new Player('H5',350,430,'home')];
+  awayTeam = [new Player('A1',110,140,'away'), new Player('A2',170,140,'away'), new Player('A3',230,140,'away'), new Player('A4',290,140,'away'), new Player('A5',350,140,'away')];
+  homeTeam[0].hasBall = true; homeTeam.forEach(p=>p.action='idle'); awayTeam.forEach(p=>p.action='idle');
 }
 createTeams();
-let ball={x:homeTeam[0].x+8,y:homeTeam[0].y,dx:0,dy:0,moving:false,owner:null};
+let ball={x:homeTeam[0].x+12,y:homeTeam[0].y-6,moving:false,dx:0,dy:0,owner:homeTeam[0]};
 
-// ---- Season data ----
-let season={week:1,team:{name:'College A',rating:65,recruits:[],roster:[],record:{wins:0,losses:0}},opponents:[],bracket:[]};
-function generateOpponents(){season.opponents=Array.from({length:10},(_,i)=>({name:'Team '+(i+1),rating:40+rand(0,40)}));}
+// == Season / Playbook ==
+let season={week:1,team:{name:'College A',rating:70,recruits:[],roster:[],record:{wins:0,losses:0}},opponents:[],bracket:[]};
+function generateOpponents(){ season.opponents = Array.from({length:10},(_,i)=>({name:'Team '+(i+1),rating:40+rand(0,40)})); }
 generateOpponents();
+const playbook=[{id:'iso',name:'Isolation'},{id:'pickroll',name:'Pick & Roll'},{id:'post',name:'Post Up'},{id:'quick',name:'Quick Shot'},{id:'motion',name:'Motion'}];
 
-// ---- Playbook (Retro-Bowl-like) ----
-const playbook=[
-  {id:'iso',name:'Isolation',desc:'Ball-handler goes 1-on-1, higher chance of jumper.'},
-  {id:'pickroll',name:'Pick & Roll',desc:'Screen sets, roll to basket for layup.'},
-  {id:'post',name:'Post Up',desc:'Feed big in post for high-percentage shots.'},
-  {id:'quick',name:'Quick Shot',desc:'Fast attempt with lower % but catches defense off-guard.'},
-  {id:'motion',name:'Motion Offense',desc:'Team moves to create open shot; balanced outcome.'}
-];
-
-// ---- UI Elements ----
-const playsDiv=document.getElementById('plays');
-const playOverlay=document.getElementById('playOverlay');
-const playOptions=document.getElementById('playOptions');
-let selectedPlay=null;
-
-function showPlayOverlay(){playOptions.innerHTML='';playbook.forEach(p=>{const btn=document.createElement('button');btn.textContent=p.name;btn.onclick=()=>{selectedPlay=p;Array.from(playOptions.querySelectorAll('button')).forEach(b=>b.style.outline='');btn.style.outline='2px solid #fff'}});playOverlay.style.display='block'}
-function hidePlayOverlay(){playOverlay.style.display='none';selectedPlay=null}
-
-// Populate play area with quick info
-function refreshPlaysUI(){playsDiv.innerHTML='Play Mode Controls: Call a play (game-pauses while selecting).';}
+// == UI Elements ==
+const playsDiv=document.getElementById('plays'); const playOverlay=document.getElementById('playOverlay'); const playOptions=document.getElementById('playOptions'); let selectedPlay=null;
+function showPlayOverlay(){ playOptions.innerHTML=''; playbook.forEach(p=>{ const btn=document.createElement('button'); btn.textContent=p.name; btn.onclick=()=>{ selectedPlay=p; Array.from(playOptions.querySelectorAll('button')).forEach(b=>b.style.outline=''); btn.style.outline='2px solid #fff'}; playOptions.appendChild(btn); }); playOverlay.style.display='block'; }
+function hidePlayOverlay(){ playOverlay.style.display='none'; selectedPlay=null; }
+function refreshPlaysUI(){ playsDiv.innerHTML='Play Mode: Call a play to simulate a set-piece.'; }
 refreshPlaysUI();
 
-// ---- Play execution logic ----
-let inPlayMode=false; // when true, user calls plays each possession
-let possession='home'; // 'home' or 'away'
-let gameClock=600; // 600 seconds -> 10 minutes simplified
-let homeScore=0,awayScore=0;
-
-function evaluatePlay(play){
-  // determine outcome probabilities based on play, team skill, random
-  const teamRating=season.team.rating;
-  let base=teamRating + rand(-10,10);
-  let successChance=0.5; // base
-  switch(play.id){
-    case 'iso': successChance=0.45 + (base-60)/200; break;
-    case 'pickroll': successChance=0.55 + (base-60)/200; break;
-    case 'post': successChance=0.6 + (base-60)/200; break;
-    case 'quick': successChance=0.35 + (base-60)/200; break;
-    case 'motion': successChance=0.5 + (base-60)/200; break;
-  }
-  // defense adjustment
-  const defAdj = season.opponents[Math.max(0,season.week-1)] ? (season.opponents[Math.max(0,season.week-1)].rating - 60)/200 : 0;
-  successChance -= defAdj;
-  successChance = Math.max(0.15, Math.min(0.9, successChance));
-  const made = Math.random() < successChance;
-  // decide points: layup(2) or 3pt possibility for iso/quick/motion
-  let pts = 2;
-  if(play.id==='iso' || play.id==='quick' || play.id==='motion'){
-    if(Math.random() < 0.18) pts = 3; // some 3pt chance
-  }
-  return {made,pts,successChance};
+// == Play logic ==
+let disableControl=false; let possession='home'; let homeScore=0, awayScore=0;
+function evaluatePlay(play){ const teamRating=season.team.rating; let base=teamRating + rand(-10,10); let success=0.5; switch(play.id){case 'iso': success=0.46 + (base-60)/200; break;case 'pickroll': success=0.56 + (base-60)/200; break;case 'post': success=0.62 + (base-60)/200; break;case 'quick': success=0.38 + (base-60)/200; break;case 'motion': success=0.5 + (base-60)/200; break;} const defAdj = season.opponents[Math.max(0,season.week-1)] ? (season.opponents[Math.max(0,season.week-1)].rating - 60)/200 : 0; success -= defAdj; success = Math.max(0.12,Math.min(0.9,success)); const made = Math.random() < success; let pts=2; if(['iso','quick','motion'].includes(play.id) && Math.random()<0.18) pts=3; return {made,pts,success}; }
+function runPlay(play){ disableControl=true; // animate players
+  let anim=0; const animLen=40; // set actions
+  homeTeam.forEach(p=>p.action='run');
+  const interval=setInterval(()=>{ anim++; // small movement to show action
+    homeTeam.forEach((p,i)=>{ if(play.id==='pickroll' && i===1 && anim<20) p.x-=2; if(play.id==='post' && i>=2) p.y-=1; if(play.id==='iso' && p.hasBall) p.x+=0; });
+    if(anim>animLen){ clearInterval(interval); resolvePlay(play); } },16);
 }
+function resolvePlay(play){ const res=evaluatePlay(play); const ballHandler = homeTeam.find(p=>p.hasBall) || homeTeam[0]; if(res.made){ homeScore += res.pts; ballHandler.points += res.pts; ballHandler.shots++; ballHandler.made++; ballHandler.action='shoot'; season.bracket.push({week:season.week,play:play.name,result:'Made',pts:res.pts}); showMessage(`Play result: ${play.name} — MADE ${res.pts} pts`);} else { season.bracket.push({week:season.week,play:play.name,result:'Miss',pts:0}); ballHandler.action='idle'; showMessage(`Play result: ${play.name} — Miss`);} // possession switch
+  homeTeam.forEach(p=>p.hasBall=false); ball.owner=null; possession='away'; setTimeout(()=>{ opponentPossession(); },600); disableControl=false; updateUI(); }
+function opponentPossession(){ const oppPlay = playbook[rand(0,playbook.length-1)]; const oppRating = season.opponents[Math.max(0,season.week-1)]?.rating || 55; const base = oppRating + rand(-10,10); let succ = 0.45 + (base-60)/200 + (rand(-10,10)/100); succ = Math.max(0.1,Math.min(0.85,succ)); const made = Math.random()<succ; const pts = Math.random()<0.18?3:2; if(made){ awayScore+=pts; showMessage(`Opponent scored ${pts}`);} possession='home'; // give ball back to center
+  homeTeam.forEach((p,i)=>{ p.hasBall = i===0; }); ball.owner = homeTeam[0]; updateUI(); }
 
-function callSelectedPlay(){ if(!selectedPlay) return alert('Select a play first'); playOverlay.style.display='none';
-  // simulate on-court: pause normal input, run play animation + apply result
-  runPlay(selectedPlay);
-}
+function callSelectedPlay(){ if(!selectedPlay) return alert('Select a play first'); playOverlay.style.display='none'; runPlay(selectedPlay); selectedPlay=null; }
 
-function runPlay(play){
-  // simple animation: move players based on play type, then resolve
-  // freeze away movement
-  disableControl=true;
-  let anim=0; const animLen=40;
-  const animInterval=setInterval(()=>{
-    anim++;
-    // basic movement patterns
-    if(play.id==='pickroll'){
-      // screen: one teammate moves to set screen near ball then roll
-      homeTeam.forEach((p,i)=>{ if(i===1) p.x-=1; if(i===2 && anim>20) p.y-=2; });
-    } else if(play.id==='iso'){
-      // ball handler isolates: others spread
-      homeTeam.forEach((p,i)=>{ if(!p.hasBall) p.y+= (i%2?1:-1); });
-    } else if(play.id==='motion'){
-      homeTeam.forEach((p,i)=>{ p.x += (i%2?1:-1); });
-    }
-    if(anim>animLen){ clearInterval(animInterval); resolvePlay(play); disableControl=false; }
-  },16);
-}
-
-function resolvePlay(play){ const res=evaluatePlay(play);
-  if(res.made){ homeScore += res.pts; // assign points to ball-handler
-    const scorer = homeTeam.find(p=>!p.control && !p.hasBall) || homeTeam[0];
-    scorer.points += res.pts; scorer.shots++; scorer.made++;
-    season.bracket.push({week:season.week,play:play.name,result:'Made',pts:res.pts});
-    showMessage(`Play result: ${play.name} — MADE ${res.pts} pts`);
-  } else {
-    season.bracket.push({week:season.week,play:play.name,result:'Miss',pts:0});
-    showMessage(`Play result: ${play.name} — Miss`);
-  }
-  // switch possession to opponent (simplified)
-  possession = 'away';
-  // fast simulate opponent possession
-  setTimeout(()=>{opponentPossession();},600);
-  updateUI();
-}
-
-function opponentPossession(){
-  // simple AI: pick random play and resolve with opponent rating
-  const oppPlay = playbook[rand(0,playbook.length-1)];
-  // lower chance to get 3s
-  const oppRating = season.opponents[Math.max(0,season.week-1)]?.rating || 55;
-  const base=oppRating+rand(-10,10);
-  let oppSuccess=0.45 + (base-60)/200 + (rand(-10,10)/100);
-  oppSuccess = Math.max(0.1,Math.min(0.85,oppSuccess));
-  const made = Math.random()<oppSuccess;
-  const pts = (Math.random()<0.18 ? 3 : 2);
-  if(made){ awayScore+=pts; }
-  possession='home';
-  updateUI();
-}
-
+// == UI & Logging ==
 function showMessage(msg){ const info=document.getElementById('info'); info.innerHTML = `<div>${msg}</div>` + info.innerHTML; }
-
-// ---- Game flow & UI ----
-let disableControl=false;
 function updateUI(){ document.getElementById('stats').innerHTML = `<strong>Score</strong> Home ${homeScore} - ${awayScore} Away<br>Week ${season.week}`; displayBracket(); displayRoster(); }
+function displayBracket(){ const b=document.getElementById('bracket'); let html='<h3>Play Log</h3><ol>'; season.bracket.slice(-12).forEach(x=>{ html+=`<li>W${x.week||''} ${x.play}: ${x.result} ${x.pts? '('+x.pts+')':''}</li>` }); html+='</ol>'; b.innerHTML=html; }
+function displayRoster(){ let html='<h3>Roster</h3><div style="display:flex;justify-content:center;gap:12px">'; homeTeam.forEach(p=>{ html+=`<div style="text-align:center">${p.id}<br>PTS:${p.points}</div>` }); html+='</div>'; document.getElementById('stats').innerHTML += html; }
 
-function displayBracket(){ const b=document.getElementById('bracket'); let html='<h3>Play Log</h3><ol>'; season.bracket.slice(-10).forEach(x=>{ html+=`<li>W${x.week||''} ${x.play}: ${x.result} ${x.pts? '('+x.pts+')':''}</li>`}); html+='</ol>'; b.innerHTML=html; }
+// == Controls ==
+document.getElementById('enterPlayMode').onclick=()=>{ showPlayOverlay(); };
+document.getElementById('cancelPlay').onclick=()=>{ hidePlayOverlay(); };
+document.getElementById('callPlay').onclick=()=>{ callSelectedPlay(); };
+document.getElementById('saveBtn').onclick=saveGame; document.getElementById('loadBtn').onclick=loadGame;
+document.getElementById('subButton').onclick=()=>{ const subFrom = prompt('Substitute: enter starting player id to replace (e.g. H1):'); const subTo = prompt('Enter new player id (e.g. H6)'); if(!subFrom||!subTo) return; const idx = homeTeam.findIndex(p=>p.id===subFrom); if(idx===-1) return alert('Player not found'); homeTeam[idx].id = subTo; alert('Substitution made'); updateUI(); }
 
-function displayRoster(){ let html='<h3>Roster</h3><div style="display:flex;justify-content:center;gap:12px">'; homeTeam.forEach(p=>{ html+=`<div>${p.id}<br>PTS:${p.points}</div>` }); html+='</div>'; document.getElementById('stats').innerHTML += html; }
+// == Save / Load ==
+function serializePlayers(arr){ return arr.map(p=>({id:p.id,x:p.x,y:p.y,team:p.team,hasBall:p.hasBall,action:p.action,frame:p.frame,points:p.points,shots:p.shots,made:p.made,assists:p.assists})); }
+function deserializePlayers(data){ return data.map(d=>{ const p=new Player(d.id,d.x,d.y,d.team); p.hasBall=d.hasBall; p.action=d.action; p.frame=d.frame; p.points=d.points; p.shots=d.shots; p.made=d.made; p.assists=d.assists; return p; }); }
+function saveGame(){ const state={season,homeTeam:serializePlayers(homeTeam),awayTeam:serializePlayers(awayTeam),ball,homeScore,awayScore}; localStorage.setItem('retroHoopsSave',JSON.stringify(state)); alert('Saved'); }
+function loadGame(){ const data=localStorage.getItem('retroHoopsSave'); if(!data) return alert('No save found'); const s=JSON.parse(data); season=s.season; homeTeam=deserializePlayers(s.homeTeam); awayTeam=deserializePlayers(s.awayTeam); ball=s.ball; homeScore=s.homeScore; awayScore=s.awayScore; alert('Loaded'); updateUI(); }
 
-// ---- Controls ----
-document.getElementById('enterPlayMode').onclick=()=>{ inPlayMode=true; showPlayOverlay(); };
-document.getElementById('cancelPlay').onclick=()=>{ hidePlayOverlay() };
-document.getElementById('callPlay').onclick=()=>{ callSelectedPlay(); selectedPlay=null; }
-
-document.getElementById('saveBtn').onclick=saveGame;
-document.getElementById('loadBtn').onclick=loadGame;
-
-// substitute button opens prompt to swap players
-document.getElementById('subButton').onclick=()=>{
-  const subFrom = prompt('Substitute: enter starting player id to replace (e.g. H1):');
-  const subTo = prompt('Enter new player id (e.g. H6)');
-  if(!subFrom||!subTo) return;
-  // naive: replace coordinates and stats
-  const idx = homeTeam.findIndex(p=>p.id===subFrom);
-  if(idx===-1) return alert('Player not found');
-  homeTeam[idx].id = subTo; alert('Substitution made'); updateUI();
+// == Input Movement ==
+let keys={}; document.addEventListener('keydown',e=>keys[e.key]=true); document.addEventListener('keyup',e=>keys[e.key]=false);
+function handleMovement(){ if(disableControl) return; const me = homeTeam.find(p=>p.control); const speed = (keys['Shift']?1.8:3.2);
+  if(keys['ArrowLeft']){ me.x -= speed; me.action = 'run'; }
+  if(keys['ArrowRight']){ me.x += speed; me.action = 'run'; }
+  if(keys['ArrowUp']){ me.y -= speed; me.action = 'run'; }
+  if(keys['ArrowDown']){ me.y += speed; me.action = 'run'; }
+  if(!keys['ArrowLeft'] && !keys['ArrowRight'] && !keys['ArrowUp'] && !keys['ArrowDown']){ if(me.action==='run') me.action='idle'; }
+  me.x = Math.max(30, Math.min(court.w-30, me.x)); me.y = Math.max(100, Math.min(court.h-40, me.y));
+  // quick shoot
+  if(keys[' '] && !ball.moving && me.hasBall){ me.action='shoot'; const shot = evaluatePlay({id:'quick'}); me.shots++; if(shot.made){ me.points+=shot.pts; me.made++; homeScore+=shot.pts; } me.hasBall=false; ball.moving=false; possession='away'; setTimeout(opponentPossession,500); }
+  // pass
+  if(keys['p'] && me.hasBall){ const teammate = homeTeam.filter(h=>h!==me)[rand(0,homeTeam.length-2)]; me.hasBall=false; teammate.hasBall=true; teammate.action='dribble'; me.action='idle'; }
 }
 
-// ---- Save/Load ----
-function serializePlayers(arr){return arr.map(p=>({id:p.id,x:p.x,y:p.y,team:p.team,hasBall:p.hasBall,points:p.points,shots:p.shots,made:p.made,assists:p.assists,offenseIQ:p.offenseIQ,defenseIQ:p.defenseIQ}));}
-function deserializePlayers(data){return data.map(p=>{const pl=new Player(p.id,p.x,p.y,p.team);pl.hasBall=p.hasBall;pl.points=p.points;pl.shots=p.shots;pl.made=p.made;pl.assists=p.assists;pl.offenseIQ=p.offenseIQ;pl.defenseIQ=p.defenseIQ;return pl;});}
-
-function saveGame(){const state={season,homeTeam:serializePlayers(homeTeam),awayTeam:serializePlayers(awayTeam),ball,homeScore,awayScore};localStorage.setItem('retroHoopsSave',JSON.stringify(state));alert('Saved');}
-function loadGame(){const data=localStorage.getItem('retroHoopsSave');if(!data) return alert('No save found');const s=JSON.parse(data);season=s.season;homeTeam=deserializePlayers(s.homeTeam);awayTeam=deserializePlayers(s.awayTeam);ball=s.ball;homeScore=s.homeScore;awayScore=s.awayScore;alert('Loaded');updateUI();}
-
-// ---- Input for on-court movement when not in playcall ----
-let keys={};document.addEventListener('keydown',e=>keys[e.key]=true);document.addEventListener('keyup',e=>keys[e.key]=false);
-function handleMovement(){ if(disableControl) return; const me = homeTeam.find(p=>p.control); const speed= (keys['Shift']?1.5:3);
-  if(keys['ArrowLeft']) me.x -= speed; if(keys['ArrowRight']) me.x += speed; if(keys['ArrowUp']) me.y -= speed; if(keys['ArrowDown']) me.y += speed;
-  // keep on court
-  me.x = Math.max(10, Math.min(court.w-30, me.x)); me.y = Math.max(90, Math.min(court.h-20, me.y));
-  // shooting via space — triggers a quick shot equivalent
-  if(keys[' '] && !ball.moving && me.hasBall){ // quick shot
-    const shot = evaluatePlay({id:'quick'});
-    me.shots++; if(shot.made){ me.points+=shot.pts; me.made++; homeScore+=shot.pts; }
-    me.hasBall=false; ball.moving=false; possession='away'; setTimeout(opponentPossession,500);
-  }
-}
-
-// ---- Game draw loop ----
-function drawCourt(){
-  // THEMED RETRO COURT — ALL FEATURES ADDED
-
-  // ===== Court Background =====
-  ctx.fillStyle = '#1e4620'; // deep retro green
-  ctx.fillRect(0,0,court.w,court.h);
-
-  // ===== Painted Lanes =====
-  ctx.fillStyle = '#d4a017'; // retro gold paint
-  // home lane
-  ctx.fillRect(court.w/2 - 60, court.h - 200, 120, 110);
-  // away lane
-  ctx.fillRect(court.w/2 - 60, 90, 120, 110);
-
-  // ===== Court Borders =====
-  ctx.strokeStyle = '#fff';
-  ctx.lineWidth = 3;
-
+// == Draw Court ==
+function drawCourt(){ // wood background
+  ctx.fillStyle='#8aa65b'; ctx.fillRect(0,0,court.w,court.h);
   // boundary
-  ctx.strokeRect(10, 90, court.w-20, court.h-100);
-
-  // center line
-  ctx.beginPath();
-  ctx.moveTo(10, court.h/2);
-  ctx.lineTo(court.w-10, court.h/2);
-  ctx.stroke();
-
+  ctx.strokeStyle='#ffffffcc'; ctx.lineWidth=3; ctx.strokeRect(10,90,court.w-20,court.h-100);
   // center circle
-  ctx.beginPath();
-  ctx.arc(court.w/2, court.h/2, 40, 0, Math.PI*2);
-  ctx.stroke();
+  ctx.beginPath(); ctx.arc(court.w/2,court.h/2,36,0,Math.PI*2); ctx.stroke();
+  // 3pt arcs
+  ctx.beginPath(); ctx.arc(court.w/2,140,140,0,Math.PI); ctx.stroke();
+  ctx.beginPath(); ctx.arc(court.w/2,court.h-140,140,Math.PI,Math.PI*2); ctx.stroke();
+  // paint
+  ctx.fillStyle='#d4a017'; ctx.fillRect(court.w/2-60,90,120,110); ctx.fillRect(court.w/2-60,court.h-200,120,110);
+  // hoop
+  ctx.fillStyle='#ff4444'; ctx.fillRect(court.hoopX-20,court.hoopY,40,6); ctx.fillStyle='#ddd'; ctx.fillRect(court.hoopX-30,court.backboardY,60,4);
+}
 
-  // ===== Keys (Free Throw Circles) =====
-  // home free throw semicircle
-  ctx.beginPath();
-  ctx.arc(court.w/2, court.h - 200, 60, 0, Math.PI);
-  ctx.stroke();
+// == Draw Loop ==
+function draw(){ ctx.clearRect(0,0,canvas.width,canvas.height); drawCourt(); // update frames
+  [...homeTeam,...awayTeam].forEach(p=>{ p.step(); p.draw(); });
+  // ball draw if free
+  if(ball.moving){ ctx.fillStyle='#ffb400'; ctx.beginPath(); ctx.arc(ball.x,ball.y,6,0,Math.PI*2); ctx.fill(); }
+  updateUI(); }
 
-  // away free throw semicircle
-  ctx.beginPath();
-  ctx.arc(court.w/2, 200, 60, Math.PI, Math.PI*2);
-  ctx.stroke();
-
-  // ===== 3-Point Lines =====
-  ctx.lineWidth = 2;
-
-  // home arc
-  ctx.beginPath();
-  ctx.arc(court.w/2, court.h - 120, 140, Math.PI, Math.PI*2);
-  ctx.stroke();
-
-  // away arc
-  ctx.beginPath();
-  ctx.arc(court.w/2, 120, 140, 0, Math.PI);
-  ctx.stroke();
-
-  // ===== Corner 3's =====
-  ctx.beginPath();
-  ctx.moveTo(50, court.h - 200);
-  ctx.lineTo(50, court.h - 80);
-  ctx.stroke();
-
-  ctx.beginPath();
-  ctx.moveTo(court.w-50, court.h - 200);
-  ctx.lineTo(court.w-50, court.h - 80);
-  ctx.stroke();
-
-  ctx.beginPath();
-  ctx.moveTo(50, 90);
-  ctx.lineTo(50, 200);
-  ctx.stroke();
-
-  ctx.beginPath();
-  ctx.moveTo(court.w-50, 90);
-  ctx.lineTo(court.w-50, 200);
-  ctx.stroke();
-
-  // ===== Hoop + Backboard =====
-  ctx.fillStyle = '#f33';
-  ctx.fillRect(court.hoopX - 20, court.hoopY, 40, 6); // Rim
-
-  ctx.fillStyle = '#eee';
-  ctx.fillRect(court.hoopX - 30, court.backboardY, 60, 4); // Backboard
-
-  // ===== Team Logos (retro pixel text) =====
-  ctx.fillStyle = '#ffffff55';
-  ctx.font = '32px monospace';
-  ctx.textAlign = 'center';
-  ctx.fillText('COLLEGE A', court.w/2, court.h/2 - 60);
-  ctx.fillText('HOOPS', court.w/2, court.h/2 + 90);
-
-  // ===== Court Wood Lines =====
-  ctx.strokeStyle = '#00000022';
-  ctx.lineWidth = 1;
-  for(let y=100; y<court.h-100; y+=20){
-    ctx.beginPath();
-    ctx.moveTo(10,y);
-    ctx.lineTo(court.w-10,y);
-    ctx.stroke();
-  }
-}function draw(){ ctx.clearRect(0,0,canvas.width,canvas.height); drawCourt(); [...homeTeam,...awayTeam].forEach(p=>p.draw()); if(ball.moving){ctx.fillStyle='#ff0';ctx.fillRect(ball.x,ball.y,6,6);} updateUI(); }
-
-// ---- main loop ----
+// == Main Loop ==
 function loop(){ handleMovement(); draw(); requestAnimationFrame(loop); }
 loop();
 
-// ---- initialize UI ----
-function initPlayButtons(){ const optionsDiv=document.getElementById('playOptions'); optionsDiv.innerHTML=''; playbook.forEach(p=>{ const b=document.createElement('button'); b.textContent = p.name; b.onclick=()=>{ selectedPlay=p; Array.from(optionsDiv.querySelectorAll('button')).forEach(x=>x.style.background=''); b.style.background='#333'; }; optionsDiv.appendChild(b); }); }
-initPlayButtons(); updateUI();
-
-// show utility message
-showMessage('Welcome — press Enter Play Mode to call plays like Retro Bowl. Save often!');
+// init play options
+function initPlayButtons(){ const optionsDiv=document.getElementById('playOptions'); optionsDiv.innerHTML=''; playbook.forEach(p=>{ const b=document.createElement('button'); b.textContent=p.name; b.onclick=()=>{ selectedPlay=p; Array.from(optionsDiv.querySelectorAll('button')).forEach(x=>x.style.background=''); b.style.background='#333'; }; optionsDiv.appendChild(b); }); }
+initPlayButtons(); updateUI(); showMessage('NBA Jam–style sprites enabled. Animations: run, dribble, shoot, dunk.');
 
 </script>
 </body>
